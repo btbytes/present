@@ -56,6 +56,7 @@ struct ContentView: View {
         }
     }
 
+    @MainActor
     @ViewBuilder
     private func slideRow(_ slide: Slide) -> some View {
         if let index = state.slides.firstIndex(where: { $0.id == slide.id }) {
@@ -88,6 +89,7 @@ struct ContentView: View {
         }
     }
 
+    @MainActor
     private func moveSlides(from source: IndexSet, to destination: Int) {
         state.moveSlide(from: source, to: destination)
     }

@@ -12,6 +12,7 @@ PATCH := $(shell git rev-list --count HEAD)
 $(APP_BUNDLE): $(SWIFT_FILES)
 	mkdir -p $(APP_MACOS) $(APP_RESOURCES)
 	swiftc -parse-as-library -framework SwiftUI -framework AppKit -framework WebKit -framework Network -framework UniformTypeIdentifiers -o $(APP_MACOS)/$(TARGET) $(SWIFT_FILES)
+	rm -f $(APP_CONTENTS)/Info.plist
 	/usr/libexec/PlistBuddy -c "Add :CFBundleExecutable string $(TARGET)" $(APP_CONTENTS)/Info.plist
 	/usr/libexec/PlistBuddy -c "Add :CFBundleIdentifier string com.btbytes.present" $(APP_CONTENTS)/Info.plist
 	/usr/libexec/PlistBuddy -c "Add :CFBundleName string $(TARGET)" $(APP_CONTENTS)/Info.plist
