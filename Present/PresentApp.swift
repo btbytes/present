@@ -1,95 +1,96 @@
 import SwiftUI
-import Combine
 import UniformTypeIdentifiers
 
 @main
 struct PresentApp: App {
-    @State private var state: PresentationState
+    @State private var state = PresentationState()
     @State private var presentationController = PresentationWindowController()
-    @State private var server: RemoteServer
+    @State private var server = RemoteServer()
 
     init() {
-        let s = PresentationState()
-        let srv = RemoteServer()
-        srv.start(state: s)
-        _state = State(initialValue: s)
-        _server = State(initialValue: srv)
+        server.start(state: state)
     }
 
     var body: some Scene {
         WindowGroup {
             ContentView(state: state)
                 .onReceive(NotificationCenter.default.publisher(for: .remotePlay)) { _ in
-                    if !state.isPresenting {
-                        presentationController.open(state: state)
-                    }
+                    guard !state.isPresenting else { return }
+                    presentationController.open(state: state)
                 }
                 .onReceive(NotificationCenter.default.publisher(for: .remoteStop)) { _ in
-                    if state.isPresenting {
-                        presentationController.close(state: state)
-                    }
+                    guard state.isPresenting else { return }
+                    presentationController.close(state: state)
                 }
         }
         .commands {
             CommandGroup(after: .newItem) {
                 Divider()
-                Button("Open...") {
-                    FileDialogHelper.open(state: state)
-                }
-                .keyboardShortcut("o", modifiers: .command)
+                Button("Open...") { openFile() }
+                    .keyboardShortcut("o")
 
-                Button("Save As...") {
-                    FileDialogHelper.save(state: state)
-                }
-                .keyboardShortcut("s", modifiers: .command)
+                Button("Save As...") { saveFile() }
+                    .keyboardShortcut("s")
             }
 
             CommandMenu("View") {
-                Button("Zoom In") {
-                    state.zoomIn()
-                }
-                .keyboardShortcut("+", modifiers: .command)
+                Toggle("Sidebar", isOn: Binding(
+                    get: { state.sidebarVisible },
+                    set: { _ in state.toggleSidebar() }
+                ))
+                .keyboardShortcut("s", modifiers: [.command, .option])
 
-                Button("Zoom Out") {
-                    state.zoomOut()
-                }
-                .keyboardShortcut("-", modifiers: .command)
+                Divider()
 
-                Button("Actual Size") {
-                    state.zoomReset()
-                }
-                .keyboardShortcut("0", modifiers: .command)
+                Button("Zoom In") { state.zoomIn() }
+                    .keyboardShortcut("=")
+
+                Button("Zoom Out") { state.zoomOut() }
+                    .keyboardShortcut("-")
+
+                Button("Actual Size") { state.zoomReset() }
+                    .keyboardShortcut("0")
             }
 
             CommandMenu("Presentation") {
-                Button("Play") {
-                    presentationController.open(state: state)
-                }
-                .keyboardShortcut("p", modifiers: [.command, .shift])
-                .disabled(state.slides.isEmpty)
+                Button("Play") { presentationController.open(state: state) }
+                    .keyboardShortcut("p", modifiers: [.command, .shift])
+                    .disabled(state.slides.isEmpty)
             }
         }
     }
-}
 
-enum FileDialogHelper {
     @MainActor
-    static func open(state: PresentationState) {
+    private func openFile() {
         let panel = NSOpenPanel()
         panel.allowedContentTypes = [.plainText]
         panel.allowsMultipleSelection = false
-        if panel.runModal() == .OK, let url = panel.url {
-            _ = state.loadFromFile(url)
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+        do {
+            try state.load(from: url)
+        } catch {
+            presentError(error)
         }
     }
 
     @MainActor
-    static func save(state: PresentationState) {
+    private func saveFile() {
         let panel = NSSavePanel()
         panel.allowedContentTypes = [.plainText]
         panel.nameFieldStringValue = "presentation.txt"
-        if panel.runModal() == .OK, let url = panel.url {
-            _ = state.saveToFile(url)
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+        do {
+            try state.save(to: url)
+        } catch {
+            presentError(error)
         }
+    }
+
+    private func presentError(_ error: Error) {
+        let alert = NSAlert()
+        alert.messageText = "Error"
+        alert.informativeText = error.localizedDescription
+        alert.alertStyle = .warning
+        alert.runModal()
     }
 }

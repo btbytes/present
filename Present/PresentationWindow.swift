@@ -17,7 +17,6 @@ struct PresentationView: View {
                     .font(.largeTitle)
             }
 
-            // Slide counter overlay
             if !state.slides.isEmpty {
                 VStack {
                     Spacer()
@@ -40,7 +39,8 @@ struct PresentationView: View {
     }
 }
 
-class PresentationWindowController {
+@MainActor
+final class PresentationWindowController {
     private var window: NSWindow?
     private var monitor: Any?
 
@@ -52,7 +52,7 @@ class PresentationWindowController {
         let hostingView = NSHostingView(rootView: presentationView)
 
         let window = NSWindow(
-            contentRect: NSScreen.main?.frame ?? NSRect(x: 0, y: 0, width: 1920, height: 1080),
+            contentRect: NSScreen.main?.frame ?? .init(x: 0, y: 0, width: 1920, height: 1080),
             styleMask: [.borderless, .fullSizeContentView],
             backing: .buffered,
             defer: false
@@ -67,26 +67,26 @@ class PresentationWindowController {
 
         self.window = window
 
-        // Key event monitor
         monitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
+            guard let self else { return event }
             let cmd = event.modifierFlags.contains(.command)
             switch event.keyCode {
-            case 123: // Left arrow
+            case 123:
                 state.goToPrevious()
                 return nil
-            case 124: // Right arrow
+            case 124:
                 state.goToNext()
                 return nil
-            case 53: // Escape
-                self?.close(state: state)
+            case 53:
+                close(state: state)
                 return nil
-            case 24, 69 where cmd: // Cmd+= / Cmd+Numpad+
+            case 24, 69 where cmd:
                 state.zoomIn()
                 return nil
-            case 27, 78 where cmd: // Cmd+- / Cmd+Numpad-
+            case 27, 78 where cmd:
                 state.zoomOut()
                 return nil
-            case 29 where cmd: // Cmd+0
+            case 29 where cmd:
                 state.zoomReset()
                 return nil
             default:
@@ -102,10 +102,8 @@ class PresentationWindowController {
             NSEvent.removeMonitor(monitor)
             self.monitor = nil
         }
-        if let window {
-            window.close()
-        }
-        self.window = nil
+        window?.close()
+        window = nil
         state.isPresenting = false
     }
 }

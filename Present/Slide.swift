@@ -1,41 +1,42 @@
 import Foundation
+import SwiftUI
 
-@Observable
-class Slide: Identifiable {
-    let id: UUID
+struct Slide: Identifiable, Codable {
+    var id: UUID
     var url: String
 
-    init(id: UUID = UUID(), url: String = "https://example.com") {
+    init(id: UUID = .init(), url: String = "https://example.com") {
         self.id = id
         self.url = url
     }
 }
 
 @Observable
-class PresentationState {
-    var slides: [Slide] = [] {
-        didSet { saveToDisk() }
-    }
+@MainActor
+final class PresentationState {
+    var slides: [Slide] = []
     var currentIndex: Int = 0
     var isPresenting: Bool = false
     var zoomLevel: Double = 1.0
-
-    func zoomIn() { zoomLevel = min(zoomLevel + 0.1, 5.0) }
-    func zoomOut() { zoomLevel = max(zoomLevel - 0.1, 0.3) }
-    func zoomReset() { zoomLevel = 1.0 }
+    var sidebarVisible: Bool = true
 
     private static let autosaveKey = "presentAutosavedURLs"
 
     init() {
         if let urls = UserDefaults.standard.stringArray(forKey: Self.autosaveKey), !urls.isEmpty {
-            self.slides = urls.map { Slide(url: $0) }
+            slides = urls.map { Slide(url: $0) }
         }
     }
 
     var currentSlide: Slide? {
-        guard !slides.isEmpty, currentIndex >= 0, currentIndex < slides.count else { return nil }
+        guard slides.indices.contains(currentIndex) else { return nil }
         return slides[currentIndex]
     }
+
+    func zoomIn() { zoomLevel = min(zoomLevel + 0.1, 5.0) }
+    func zoomOut() { zoomLevel = max(zoomLevel - 0.1, 0.3) }
+    func zoomReset() { zoomLevel = 1.0 }
+    func toggleSidebar() { sidebarVisible.toggle() }
 
     func goToNext() {
         guard !slides.isEmpty else { return }
@@ -47,33 +48,60 @@ class PresentationState {
         currentIndex = (currentIndex - 1 + slides.count) % slides.count
     }
 
+    func addSlide() {
+        let slide = Slide()
+        slides.append(slide)
+        currentIndex = slides.count - 1
+        saveToDisk()
+    }
+
+    func deleteSlide(at index: Int) {
+        guard slides.indices.contains(index) else { return }
+        slides.remove(at: index)
+        if slides.isEmpty {
+            currentIndex = 0
+        } else {
+            currentIndex = min(currentIndex, slides.count - 1)
+        }
+        saveToDisk()
+    }
+
+    func selectSlide(_ slideID: UUID) {
+        guard let index = slides.firstIndex(where: { $0.id == slideID }) else { return }
+        currentIndex = index
+    }
+
+    func moveSlide(from source: IndexSet, to destination: Int) {
+        slides.move(fromOffsets: source, toOffset: destination)
+        saveToDisk()
+    }
+
     func saveToDisk() {
-        let urls = slides.map { $0.url }
-        UserDefaults.standard.set(urls, forKey: Self.autosaveKey)
+        UserDefaults.standard.set(slides.map(\.url), forKey: Self.autosaveKey)
     }
 
-    func loadFromDisk() {
-        guard let urls = UserDefaults.standard.stringArray(forKey: Self.autosaveKey), !urls.isEmpty else { return }
+    func load(from url: URL) throws {
+        let contents = try String(contentsOf: url, encoding: .utf8)
+        let urls = contents.components(separatedBy: .newlines)
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty }
+        guard !urls.isEmpty else { throw LoadError.emptyFile }
         slides = urls.map { Slide(url: $0) }
         currentIndex = 0
+        saveToDisk()
     }
 
-    func loadFromFile(_ url: URL) -> Bool {
-        guard let contents = try? String(contentsOf: url, encoding: .utf8) else { return false }
-        let urls = contents.components(separatedBy: .newlines).filter { !$0.trimmingCharacters(in: .whitespaces).isEmpty }
-        guard !urls.isEmpty else { return false }
-        slides = urls.map { Slide(url: $0) }
-        currentIndex = 0
-        return true
+    func save(to url: URL) throws {
+        let contents = slides.map(\.url).joined(separator: "\n") + "\n"
+        try contents.write(to: url, atomically: true, encoding: .utf8)
     }
 
-    func saveToFile(_ url: URL) -> Bool {
-        let contents = slides.map { $0.url }.joined(separator: "\n") + "\n"
-        do {
-            try contents.write(to: url, atomically: true, encoding: .utf8)
-            return true
-        } catch {
-            return false
+    enum LoadError: LocalizedError {
+        case emptyFile
+        var errorDescription: String? {
+            switch self {
+            case .emptyFile: "File contains no URLs"
+            }
         }
     }
 }

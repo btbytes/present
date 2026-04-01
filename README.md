@@ -1,18 +1,19 @@
 # Present
 
-A macOS SwiftUI app for giving presentations where each slide is a URL displayed in a WebView.
+A macOS app for giving presentations where each slide is a URL displayed in a WebView.
 
-> [!WARNING]  
+> [!WARNING]
 > This app was vibe coded as a demo for a conference (where I presented a talk using this app). Here's [part of the transcript](https://gisthost.github.io/?bfbc338977ceb71e298e4d4d5ac7d63c). I do not know Swift or SwiftUI. I make no promises other than it worked on my machine!
 
 ## Features
 
 - **Edit mode**: Split view with a sidebar for managing URLs and a WebView preview panel
+- **Collapsible sidebar**: Toggle the sidebar with View > Sidebar (Cmd+Option+S) or programmatically
 - **Play mode**: Fullscreen WebView with arrow key navigation (wraps around)
 - **Auto-persist**: URL list saves automatically and restores on relaunch
 - **File I/O**: File > Open/Save As for plain text files (one URL per line)
 - **Zoom**: Cmd+=/- to adjust text size in both preview and fullscreen
-- **Drag to reorder**: Drag slides by their number to rearrange
+- **Drag to reorder**: Drag slides by their number to rearrange, or use Edit menu
 - **Image slides**: URLs ending in `.png`, `.gif`, `.jpg`, `.jpeg`, `.webp`, or `.svg` render as full-window images
 - **Remote control**: Embedded HTTP server on port 9123 serves a mobile-friendly page with next/prev, play/stop, zoom, and scroll controls
 
@@ -31,19 +32,44 @@ A macOS SwiftUI app for giving presentations where each slide is a URL displayed
   </tr>
 </table>
 
-## Building from the command line
+## Install
 
-Build and run without opening Xcode:
+### Homebrew
+
+```bash
+brew tap btbytes/brew
+brew install --cask present
+```
+
+### Manual download
+
+Download the latest release from the [Releases page](https://github.com/btbytes/present/releases).
+
+## Building from source
+
+### Requirements
+
+- macOS 14+
+- Xcode command line tools (`xcode-select --install`)
+
+### Build with Makefile
+
+```bash
+make
+open Present.app
+```
+
+Or build and launch in one step:
+
+```bash
+make run
+```
+
+### Build with Xcode
 
 ```bash
 xcodebuild -project Present.xcodeproj -scheme Present -configuration Release build SYMROOT=build
 open build/Release/Present.app
-```
-
-To clean the build:
-
-```bash
-rm -rf build
 ```
 
 ## Creating a release
@@ -51,14 +77,14 @@ rm -rf build
 To create a zip of the app for attaching to a GitHub release:
 
 ```bash
-xcodebuild -project Present.xcodeproj -scheme Present -configuration Release build SYMROOT=build
-cd build/Release && zip -r Present.app.zip Present.app
+make
+zip -r Present-1.0.0.zip Present.app
 ```
 
 Then upload it to a GitHub release:
 
 ```bash
-gh release create <tag> build/Release/Present.app.zip --title "Present <tag>"
+gh release create v1.0.0 Present-1.0.0.zip --title "Present 1.0.0"
 ```
 
 Note: the app is not signed or notarized, so users will need to right-click > Open on first launch to bypass Gatekeeper.
@@ -70,6 +96,24 @@ Note: the app is not signed or notarized, so users will need to right-click > Op
 3. **Presentation > Play** (Cmd+Shift+P) enters fullscreen
 4. Left/Right arrow keys navigate between slides
 5. Escape exits presentation mode
+6. Toggle sidebar visibility with View > Sidebar (Cmd+Option+S)
+
+## Remote control
+
+When Present is running, open `http://<mac-ip>:9123` on any device on the same network to access the mobile remote control.
+
+### Remote API
+
+| Endpoint | Action |
+|----------|--------|
+| `GET /next` | Next slide |
+| `GET /prev` | Previous slide |
+| `GET /play` | Start presentation |
+| `GET /stop` | Stop presentation |
+| `GET /zoomin` | Zoom in |
+| `GET /zoomout` | Zoom out |
+| `GET /scroll?dy=N` | Scroll by N pixels |
+| `GET /status` | JSON status response |
 
 ## File format
 

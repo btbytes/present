@@ -1,0 +1,91 @@
+name: Build
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: Build macOS App
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Read version
+        id: version
+        run: |
+          MAJOR_MINOR=$(cat VERSION)
+          PATCH=${{ github.run_number }}
+          VERSION="${MAJOR_MINOR}.${PATCH}"
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "Version: $VERSION"
+
+      - name: Build
+        run: make
+
+      - name: Create release archive
+        run: |
+          mkdir -p release
+          cp -R Present.app release/
+          cp README.md release/
+          cd release
+          zip -r Present-${{ steps.version.outputs.version }}.zip .
+          mv Present-${{ steps.version.outputs.version }}.zip ..
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Present-${{ steps.version.outputs.version }}
+          path: Present-${{ steps.version.outputs.version }}.zip
+
+      - name: Create or update Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          TAG="v$VERSION"
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release upload "$TAG" --clobber "Present-${VERSION}.zip"
+          else
+            gh release create "$TAG" \
+              --title "Build $VERSION" \
+              --generate-notes \
+              "Present-${VERSION}.zip"
+          fi
+
+      - name: Update Homebrew tap
+        env:
+          GH_TOKEN: ${{ secrets.TAP_PAT }}
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          ZIP_URL="https://github.com/btbytes/present/releases/download/v${VERSION}/Present-${VERSION}.zip"
+          SHA256=$(curl -sL "$ZIP_URL" | shasum -a 256 | awk '{print $1}')
+
+          export SHA256
+          FORMULA=$(bash .github/scripts/update-formula.sh "$VERSION" "$ZIP_URL")
+
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "github-actions[bot]@users.noreply.github.com"
+
+          TAP_REPO="homebrew-brew"
+
+          TMPDIR=$(mktemp -d)
+          git clone "https://x-access-token:${GH_TOKEN}@github.com/btbytes/$TAP_REPO.git" "$TMPDIR"
+          cd "$TMPDIR"
+
+          mkdir -p Casks
+          echo "$FORMULA" > Casks/present.rb
+
+          if git diff --quiet HEAD -- Casks/present.rb 2>/dev/null && [ -z "$(git status --porcelain Casks/present.rb 2>/dev/null)" ]; then
+            echo "Cask unchanged, skipping commit"
+            exit 0
+          fi
+
+          git add Casks/present.rb
+          git commit -m "Update present to $VERSION"
+          git push origin main

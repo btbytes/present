@@ -2,9 +2,9 @@ import Foundation
 import Network
 
 extension Notification.Name {
-    static let remotePlay = Notification.Name("remotePlay")
-    static let remoteStop = Notification.Name("remoteStop")
-    static let remoteScroll = Notification.Name("remoteScroll")
+    static let remotePlay = Self("remotePlay")
+    static let remoteStop = Self("remoteStop")
+    static let remoteScroll = Self("remoteScroll")
 }
 
 @MainActor
@@ -15,20 +15,15 @@ final class RemoteServer {
     func start(state: PresentationState) {
         self.state = state
         do {
-            let params = NWParameters.tcp
-            listener = try NWListener(using: params, on: 9123)
+            listener = try .init(using: .tcp, on: 9123)
         } catch {
             print("RemoteServer: failed to create listener: \(error)")
             return
         }
         listener?.newConnectionHandler = { [weak self] connection in
-            Task { @MainActor in
-                self?.handleConnection(connection)
-            }
+            Task { @MainActor in self?.handle(connection) }
         }
-        listener?.stateUpdateHandler = { newState in
-            print("RemoteServer: \(newState)")
-        }
+        listener?.stateUpdateHandler = { print("RemoteServer: \($0)") }
         listener?.start(queue: .main)
     }
 
@@ -37,7 +32,7 @@ final class RemoteServer {
         listener = nil
     }
 
-    private func handleConnection(_ connection: NWConnection) {
+    private func handle(_ connection: NWConnection) {
         connection.start(queue: .main)
         connection.receive(minimumIncompleteLength: 1, maximumLength: 8192) { [weak self] data, _, _, error in
             guard let self, let data, error == nil else {
@@ -45,9 +40,8 @@ final class RemoteServer {
                 return
             }
             let request = String(data: data, encoding: .utf8) ?? ""
-            let response = self.route(request)
-            let responseData = Data(response.utf8)
-            connection.send(content: responseData, completion: .contentProcessed { _ in
+            let response = route(request)
+            connection.send(content: Data(response.utf8), completion: .contentProcessed { _ in
                 connection.cancel()
             })
         }
@@ -61,53 +55,45 @@ final class RemoteServer {
         switch path {
         case "/next":
             state?.goToNext()
-            return jsonResponse("ok")
         case "/prev":
             state?.goToPrevious()
-            return jsonResponse("ok")
         case "/play":
             NotificationCenter.default.post(name: .remotePlay, object: nil)
-            return jsonResponse("ok")
         case "/stop":
             NotificationCenter.default.post(name: .remoteStop, object: nil)
-            return jsonResponse("ok")
         case "/zoomin":
             state?.zoomIn()
-            return jsonResponse("ok")
         case "/zoomout":
             state?.zoomOut()
-            return jsonResponse("ok")
         case _ where path.hasPrefix("/scroll"):
-            if let query = path.split(separator: "?").last,
-               let dyParam = query.split(separator: "=").last,
-               let dy = Double(dyParam) {
-                NotificationCenter.default.post(name: .remoteScroll, object: nil, userInfo: ["dy": dy])
+            if let dy = URLComponents(string: path)?.queryItems?.first(where: { $0.name == "dy" })?.value,
+               let delta = Double(dy) {
+                NotificationCenter.default.post(name: .remoteScroll, object: nil, userInfo: ["dy": delta])
             }
-            return jsonResponse("ok")
         case "/status":
             return statusResponse()
         default:
             return htmlResponse()
         }
+        return jsonResponse("ok")
     }
 
     private func jsonResponse(_ status: String) -> String {
-        let body = "{\"status\":\"\(status)\"}"
-        return "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: \(body.utf8.count)\r\nConnection: close\r\n\r\n\(body)"
+        let body = #"{"status":"\#(status)"}"#
+        return httpResponse(body: body, contentType: "application/json")
     }
 
     private func statusResponse() -> String {
-        let index = state?.currentIndex ?? 0
-        let total = state?.slides.count ?? 0
-        let presenting = state?.isPresenting ?? false
-        let slideURL = (state?.currentSlide?.url ?? "").replacingOccurrences(of: "\"", with: "\\\"")
-        let body = "{\"slide\":\(index + 1),\"total\":\(total),\"presenting\":\(presenting),\"url\":\"\(slideURL)\"}"
-        return "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: \(body.utf8.count)\r\nConnection: close\r\n\r\n\(body)"
+        let body = #"{"slide":\#(state?.currentIndex ?? 0 + 1),"total":\#(state?.slides.count ?? 0),"presenting":\#(state?.isPresenting ?? false),"url":"\#((state?.currentSlide?.url ?? "").replacingOccurrences(of: "\"", with: "\\\""))"}"#
+        return httpResponse(body: body, contentType: "application/json")
     }
 
     private func htmlResponse() -> String {
-        let body = Self.htmlPage
-        return "HTTP/1.1 200 OK\r\nContent-Type: text/html; charset=utf-8\r\nContent-Length: \(body.utf8.count)\r\nConnection: close\r\n\r\n\(body)"
+        httpResponse(body: Self.htmlPage, contentType: "text/html; charset=utf-8")
+    }
+
+    private func httpResponse(body: String, contentType: String) -> String {
+        "HTTP/1.1 200 OK\r\nContent-Type: \(contentType)\r\nContent-Length: \(body.utf8.count)\r\nConnection: close\r\n\r\n\(body)"
     }
 
     static let htmlPage = """

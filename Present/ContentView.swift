@@ -3,46 +3,25 @@ import SwiftUI
 struct ContentView: View {
     @Bindable var state: PresentationState
     @State private var selection: UUID?
+    @State private var columnVisibility: NavigationSplitViewVisibility = .all
 
     var body: some View {
-        NavigationSplitView {
+        NavigationSplitView(columnVisibility: $columnVisibility) {
             VStack(spacing: 0) {
                 List(selection: $selection) {
-                    ForEach(Array(state.slides.enumerated()), id: \.element.id) { index, slide in
-                        HStack {
-                            Text("\(index + 1).")
-                                .foregroundStyle(.secondary)
-                                .frame(width: 24, alignment: .trailing)
-                                .draggable(slide.id.uuidString)
-                            TextField("URL", text: Binding(
-                                get: { slide.url },
-                                set: { slide.url = $0; state.saveToDisk() }
-                            ))
-                            .textFieldStyle(.roundedBorder)
-                        }
-                        .tag(slide.id)
-                        .dropDestination(for: String.self) { items, _ in
-                            guard let draggedIDString = items.first,
-                                  let draggedID = UUID(uuidString: draggedIDString),
-                                  let fromIndex = state.slides.firstIndex(where: { $0.id == draggedID }),
-                                  let toIndex = state.slides.firstIndex(where: { $0.id == slide.id })
-                            else { return false }
-                            withAnimation {
-                                state.slides.move(fromOffsets: IndexSet(integer: fromIndex), toOffset: toIndex > fromIndex ? toIndex + 1 : toIndex)
-                            }
-                            return true
-                        }
+                    ForEach(state.slides) { slide in
+                        slideRow(slide)
                     }
+                    .onMove(perform: moveSlides)
+                    .onDelete(perform: deleteSlides)
                 }
                 .listStyle(.sidebar)
-                .onChange(of: selection) { _, newValue in
-                    if let newValue, let index = state.slides.firstIndex(where: { $0.id == newValue }) {
-                        state.currentIndex = index
-                    }
+                .onChange(of: selection) {
+                    if let selection { state.selectSlide(selection) }
                 }
 
                 HStack {
-                    Button(action: addSlide) {
+                    Button(action: state.addSlide) {
                         Image(systemName: "plus")
                     }
                     Button(action: deleteSelected) {
@@ -58,45 +37,73 @@ struct ContentView: View {
             if let slide = state.currentSlide {
                 WebView(url: slide.url, pageZoom: state.zoomLevel)
             } else {
-                VStack {
-                    Text("No slide selected")
-                        .foregroundStyle(.secondary)
-                    Text("Add a URL to get started")
-                        .foregroundStyle(.tertiary)
-                        .font(.caption)
-                }
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                ContentUnavailableView(
+                    "No slide selected",
+                    systemImage: "rectangle.on.rectangle",
+                    description: Text("Add a URL to get started")
+                )
             }
         }
         .onAppear {
-            if state.slides.isEmpty {
-                addSlide()
-            }
-            if let first = state.slides.first {
-                selection = first.id
+            if state.slides.isEmpty { state.addSlide() }
+            if let first = state.slides.first { selection = first.id }
+            columnVisibility = state.sidebarVisible ? .all : .detailOnly
+        }
+        .onChange(of: state.sidebarVisible) {
+            withAnimation {
+                columnVisibility = state.sidebarVisible ? .all : .detailOnly
             }
         }
     }
 
-    private func addSlide() {
-        let slide = Slide()
-        state.slides.append(slide)
-        selection = slide.id
-        state.currentIndex = state.slides.count - 1
+    @ViewBuilder
+    private func slideRow(_ slide: Slide) -> some View {
+        if let index = state.slides.firstIndex(where: { $0.id == slide.id }) {
+            HStack {
+                Text("\(index + 1).")
+                    .foregroundStyle(.secondary)
+                    .frame(width: 24, alignment: .trailing)
+                    .draggable(slide.id.uuidString)
+                TextField("URL", text: Binding(
+                    get: { slide.url },
+                    set: { slide.url = $0; state.saveToDisk() }
+                ))
+                .textFieldStyle(.roundedBorder)
+            }
+            .tag(slide.id)
+            .dropDestination(for: String.self) { items, _ in
+                guard let draggedIDString = items.first,
+                      let draggedID = UUID(uuidString: draggedIDString),
+                      let fromIndex = state.slides.firstIndex(where: { $0.id == draggedID }),
+                      let toIndex = state.slides.firstIndex(where: { $0.id == slide.id })
+                else { return false }
+                withAnimation {
+                    state.moveSlide(
+                        from: IndexSet(integer: fromIndex),
+                        to: toIndex > fromIndex ? toIndex + 1 : toIndex
+                    )
+                }
+                return true
+            }
+        }
+    }
+
+    private func moveSlides(from source: IndexSet, to destination: Int) {
+        state.moveSlide(from: source, to: destination)
+    }
+
+    private func deleteSlides(at offsets: IndexSet) {
+        for index in offsets.sorted(by: >) {
+            state.deleteSlide(at: index)
+        }
+        selection = nil
     }
 
     private func deleteSelected() {
-        guard let selection else { return }
-        if let index = state.slides.firstIndex(where: { $0.id == selection }) {
-            state.slides.remove(at: index)
-            if state.slides.isEmpty {
-                self.selection = nil
-                state.currentIndex = 0
-            } else {
-                let newIndex = min(index, state.slides.count - 1)
-                state.currentIndex = newIndex
-                self.selection = state.slides[newIndex].id
-            }
-        }
+        guard let selection,
+              let index = state.slides.firstIndex(where: { $0.id == selection })
+        else { return }
+        state.deleteSlide(at: index)
+        self.selection = nil
     }
 }
