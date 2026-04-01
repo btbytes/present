@@ -40,7 +40,7 @@ final class RemoteServer {
                 return
             }
             let request = String(data: data, encoding: .utf8) ?? ""
-            let response = route(request)
+            let response = MainActor.assumeIsolated { self.route(request) }
             connection.send(content: Data(response.utf8), completion: .contentProcessed { _ in
                 connection.cancel()
             })

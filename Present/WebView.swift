@@ -66,9 +66,10 @@ struct WebView: NSViewRepresentable {
             observer = NotificationCenter.default.addObserver(
                 forName: .remoteScroll, object: nil, queue: .main
             ) { [weak self] notification in
-                guard let dy = notification.userInfo?["dy"] as? Double,
-                      let webView = self?.webView else { return }
-                webView.evaluateJavaScript("window.scrollBy(0, \(dy));", completionHandler: nil)
+                guard let self, let dy = notification.userInfo?["dy"] as? Double else { return }
+                Task { @MainActor in
+                    self.webView?.evaluateJavaScript("window.scrollBy(0, \(dy));", completionHandler: nil)
+                }
             }
         }
 

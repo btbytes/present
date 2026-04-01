@@ -80,10 +80,16 @@ final class PresentationWindowController {
             case 53:
                 close(state: state)
                 return nil
-            case 24, 69 where cmd:
+            case 24 where cmd:
                 state.zoomIn()
                 return nil
-            case 27, 78 where cmd:
+            case 69 where cmd:
+                state.zoomIn()
+                return nil
+            case 27 where cmd:
+                state.zoomOut()
+                return nil
+            case 78 where cmd:
                 state.zoomOut()
                 return nil
             case 29 where cmd:

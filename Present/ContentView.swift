@@ -65,8 +65,8 @@ struct ContentView: View {
                     .frame(width: 24, alignment: .trailing)
                     .draggable(slide.id.uuidString)
                 TextField("URL", text: Binding(
-                    get: { slide.url },
-                    set: { slide.url = $0; state.saveToDisk() }
+                    get: { state.slides[index].url },
+                    set: { state.slides[index].url = $0; state.saveToDisk() }
                 ))
                 .textFieldStyle(.roundedBorder)
             }
