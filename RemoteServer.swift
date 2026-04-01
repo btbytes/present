@@ -2,102 +2,107 @@ import Foundation
 import Network
 
 extension Notification.Name {
-    static let remotePlay = Self("remotePlay")
-    static let remoteStop = Self("remoteStop")
-    static let remoteScroll = Self("remoteScroll")
+  static let remotePlay = Self("remotePlay")
+  static let remoteStop = Self("remoteStop")
+  static let remoteScroll = Self("remoteScroll")
 }
 
 @MainActor
 final class RemoteServer {
-    private var listener: NWListener?
-    private var state: PresentationState?
+  private var listener: NWListener?
+  private var state: PresentationState?
 
-    func start(state: PresentationState) {
-        self.state = state
-        do {
-            listener = try .init(using: .tcp, on: 9123)
-        } catch {
-            print("RemoteServer: failed to create listener: \(error)")
-            return
-        }
-        listener?.newConnectionHandler = { [weak self] connection in
-            guard let self else { return }
-            Task { @MainActor in self.handle(connection) }
-        }
-        listener?.stateUpdateHandler = { print("RemoteServer: \($0)") }
-        listener?.start(queue: .main)
+  func start(state: PresentationState) {
+    self.state = state
+    do {
+      listener = try .init(using: .tcp, on: 9123)
+    } catch {
+      print("RemoteServer: failed to create listener: \(error)")
+      return
     }
-
-    func stop() {
-        listener?.cancel()
-        listener = nil
+    listener?.newConnectionHandler = { [weak self] connection in
+      guard let self else { return }
+      Task { @MainActor in self.handle(connection) }
     }
+    listener?.stateUpdateHandler = { print("RemoteServer: \($0)") }
+    listener?.start(queue: .main)
+  }
 
-    private func handle(_ connection: NWConnection) {
-        connection.start(queue: .main)
-        connection.receive(minimumIncompleteLength: 1, maximumLength: 8192) { [weak self] data, _, _, error in
-            guard let self, let data, error == nil else {
-                connection.cancel()
-                return
-            }
-            let request = String(data: data, encoding: .utf8) ?? ""
-            let response = MainActor.assumeIsolated { self.route(request) }
-            connection.send(content: Data(response.utf8), completion: .contentProcessed { _ in
-                connection.cancel()
-            })
-        }
+  func stop() {
+    listener?.cancel()
+    listener = nil
+  }
+
+  private func handle(_ connection: NWConnection) {
+    connection.start(queue: .main)
+    connection.receive(minimumIncompleteLength: 1, maximumLength: 8192) {
+      [weak self] data, _, _, error in
+      guard let self, let data, error == nil else {
+        connection.cancel()
+        return
+      }
+      let request = String(data: data, encoding: .utf8) ?? ""
+      let response = MainActor.assumeIsolated { self.route(request) }
+      connection.send(
+        content: Data(response.utf8),
+        completion: .contentProcessed { _ in
+          connection.cancel()
+        })
     }
+  }
 
-    private func route(_ raw: String) -> String {
-        let firstLine = raw.components(separatedBy: "\r\n").first ?? ""
-        let parts = firstLine.split(separator: " ")
-        let path = parts.count >= 2 ? String(parts[1]) : "/"
+  private func route(_ raw: String) -> String {
+    let firstLine = raw.components(separatedBy: "\r\n").first ?? ""
+    let parts = firstLine.split(separator: " ")
+    let path = parts.count >= 2 ? String(parts[1]) : "/"
 
-        switch path {
-        case "/next":
-            state?.goToNext()
-        case "/prev":
-            state?.goToPrevious()
-        case "/play":
-            NotificationCenter.default.post(name: .remotePlay, object: nil)
-        case "/stop":
-            NotificationCenter.default.post(name: .remoteStop, object: nil)
-        case "/zoomin":
-            state?.zoomIn()
-        case "/zoomout":
-            state?.zoomOut()
-        case _ where path.hasPrefix("/scroll"):
-            if let dy = URLComponents(string: path)?.queryItems?.first(where: { $0.name == "dy" })?.value,
-               let delta = Double(dy) {
-                NotificationCenter.default.post(name: .remoteScroll, object: nil, userInfo: ["dy": delta])
-            }
-        case "/status":
-            return statusResponse()
-        default:
-            return htmlResponse()
-        }
-        return jsonResponse("ok")
+    switch path {
+    case "/next":
+      state?.goToNext()
+    case "/prev":
+      state?.goToPrevious()
+    case "/play":
+      NotificationCenter.default.post(name: .remotePlay, object: nil)
+    case "/stop":
+      NotificationCenter.default.post(name: .remoteStop, object: nil)
+    case "/zoomin":
+      state?.zoomIn()
+    case "/zoomout":
+      state?.zoomOut()
+    case _ where path.hasPrefix("/scroll"):
+      if let dy = URLComponents(string: path)?.queryItems?.first(where: { $0.name == "dy" })?.value,
+        let delta = Double(dy)
+      {
+        NotificationCenter.default.post(name: .remoteScroll, object: nil, userInfo: ["dy": delta])
+      }
+    case "/status":
+      return statusResponse()
+    default:
+      return htmlResponse()
     }
+    return jsonResponse("ok")
+  }
 
-    private func jsonResponse(_ status: String) -> String {
-        let body = #"{"status":"\#(status)"}"#
-        return httpResponse(body: body, contentType: "application/json")
-    }
+  private func jsonResponse(_ status: String) -> String {
+    let body = #"{"status":"\#(status)"}"#
+    return httpResponse(body: body, contentType: "application/json")
+  }
 
-    private func statusResponse() -> String {
-        let body = #"{"slide":\#(state?.currentIndex ?? 0 + 1),"total":\#(state?.slides.count ?? 0),"presenting":\#(state?.isPresenting ?? false),"url":"\#((state?.currentSlide?.url ?? "").replacingOccurrences(of: "\"", with: "\\\""))"}"#
-        return httpResponse(body: body, contentType: "application/json")
-    }
+  private func statusResponse() -> String {
+    let body =
+      #"{"slide":\#(state?.currentIndex ?? 0 + 1),"total":\#(state?.slides.count ?? 0),"presenting":\#(state?.isPresenting ?? false),"url":"\#((state?.currentSlide?.url ?? "").replacingOccurrences(of: "\"", with: "\\\""))"}"#
+    return httpResponse(body: body, contentType: "application/json")
+  }
 
-    private func htmlResponse() -> String {
-        httpResponse(body: Self.htmlPage, contentType: "text/html; charset=utf-8")
-    }
+  private func htmlResponse() -> String {
+    httpResponse(body: Self.htmlPage, contentType: "text/html; charset=utf-8")
+  }
 
-    private func httpResponse(body: String, contentType: String) -> String {
-        "HTTP/1.1 200 OK\r\nContent-Type: \(contentType)\r\nContent-Length: \(body.utf8.count)\r\nConnection: close\r\n\r\n\(body)"
-    }
+  private func httpResponse(body: String, contentType: String) -> String {
+    "HTTP/1.1 200 OK\r\nContent-Type: \(contentType)\r\nContent-Length: \(body.utf8.count)\r\nConnection: close\r\n\r\n\(body)"
+  }
 
-    static let htmlPage = """
+  static let htmlPage = """
     <!DOCTYPE html>
     <html lang="en">
     <head>
