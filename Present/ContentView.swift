@@ -92,6 +92,7 @@ struct ContentView: View {
         state.moveSlide(from: source, to: destination)
     }
 
+    @MainActor
     private func deleteSlides(at offsets: IndexSet) {
         for index in offsets.sorted(by: >) {
             state.deleteSlide(at: index)
@@ -99,6 +100,7 @@ struct ContentView: View {
         selection = nil
     }
 
+    @MainActor
     private func deleteSelected() {
         guard let selection,
               let index = state.slides.firstIndex(where: { $0.id == selection })

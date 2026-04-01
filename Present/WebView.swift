@@ -68,7 +68,7 @@ struct WebView: NSViewRepresentable {
             ) { [weak self] notification in
                 guard let self, let dy = notification.userInfo?["dy"] as? Double else { return }
                 Task { @MainActor in
-                    self.webView?.evaluateJavaScript("window.scrollBy(0, \(dy));", completionHandler: nil)
+                    _ = try? await self.webView?.evaluateJavaScript("window.scrollBy(0, \(dy));")
                 }
             }
         }

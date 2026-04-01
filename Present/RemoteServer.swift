@@ -21,7 +21,8 @@ final class RemoteServer {
             return
         }
         listener?.newConnectionHandler = { [weak self] connection in
-            Task { @MainActor in self?.handle(connection) }
+            guard let self else { return }
+            Task { @MainActor in self.handle(connection) }
         }
         listener?.stateUpdateHandler = { print("RemoteServer: \($0)") }
         listener?.start(queue: .main)
