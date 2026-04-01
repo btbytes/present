@@ -39,11 +39,11 @@ struct PresentationView: View {
   }
 }
 
-@MainActor
 final class PresentationWindowController {
   private var window: NSWindow?
   private var monitor: Any?
 
+  @MainActor
   func open(state: PresentationState) {
     let presentationView = PresentationView(state: state) { [weak self] in
       self?.close(state: state)

@@ -12,7 +12,6 @@ struct Slide: Identifiable, Codable {
 }
 
 @Observable
-@MainActor
 final class PresentationState {
   var slides: [Slide] = []
   var currentIndex: Int = 0

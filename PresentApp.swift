@@ -2,18 +2,18 @@ import SwiftUI
 import UniformTypeIdentifiers
 
 @main
+@MainActor
 struct PresentApp: App {
   @State private var state = PresentationState()
   @State private var presentationController = PresentationWindowController()
   @State private var server = RemoteServer()
 
-  init() {
-    server.start(state: state)
-  }
-
   var body: some Scene {
     WindowGroup {
       ContentView(state: state)
+        .onAppear {
+          server.start(state: state)
+        }
         .onReceive(NotificationCenter.default.publisher(for: .remotePlay)) { _ in
           guard !state.isPresenting else { return }
           presentationController.open(state: state)
